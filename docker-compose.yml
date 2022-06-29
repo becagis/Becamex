@@ -8,16 +8,31 @@ x-common-django:
   env_file:
     - .env
   volumes:
-    - '.:/usr/src/geonode'
     - statics:/mnt/volumes/statics
     - geoserver-data-dir:/geoserver_data/data
     - backup-restore:/backup_restore
     - data:/data
     - tmp:/tmp
-  networks:
-    - shared
 
 services:
+  #### BecaGIS DB ##############################################
+#  postgis14-3.2:
+#    image: becagis/becadb_postgis:14-3.2
+#    build:
+#      context: ./postgis
+#      args:
+#        - POSTGRES_VERSION=14-3.2
+#    environment:
+#      - POSTGRES_DB=${POSTGRES_DB}
+#      - POSTGRES_USER=${POSTGRES_USER}
+#      - POSTGRES_PASS=${POSTGRES_PASSWORD}
+#    volumes:
+#      - ${DATA_PATH_HOST}/postgis14-3.2:/var/lib/postgresql
+#    ports:
+#      - "${POSTGRES_PORT}:5432"
+#    restart: on-failure
+#    networks:
+#      - shared
 
   #### BecaGIS Maps ##############################################
   laravel:
@@ -65,22 +80,15 @@ services:
     image: becagis/geoportal_nginx:3.3.2
     container_name: nginx4${COMPOSE_PROJECT_NAME}
     environment:
-      - HTTPS_HOST=${HTTPS_HOST}
       - HTTP_HOST=${HTTP_HOST}
-      - HTTPS_PORT=${HTTPS_PORT}
-      - HTTP_PORT=${HTTP_PORT}
-      - LETSENCRYPT_MODE=${LETSENCRYPT_MODE}
-      - RESOLVER=${RESOLVER}
-    ports:
-      - "${HTTP_PORT}:${HTTP_PORT}"
-      - "${HTTPS_PORT}:443"
+      - DJANGO_UPSTREAM_HOST=django
+      - GEOSERVER_UPSTREAM_HOST=geoserver
     volumes:
       - nginx-confd:/etc/nginx
       - nginx-certificates:/geonode-certificates
       - statics:/mnt/volumes/statics
     restart: on-failure
-    networks:
-      - shared
+
 
   geoserver:
     image: geonode/geoserver:2.19.6
@@ -109,22 +117,6 @@ services:
       - geoserver-data-dir:/geoserver_data/data
     restart: on-failure
 
-  #  # PostGIS database.
-  #  db:
-  #    # use geonode official postgis 13 image
-  #    image: geonode/postgis:13
-  #    container_name: db4${COMPOSE_PROJECT_NAME}
-  #    env_file:
-  #      - .env
-  #    volumes:
-  #      - dbdata:/var/lib/postgresql/data
-  #      - dbbackups:/pg_backups
-  #    restart: on-failure
-  #    # uncomment to enable remote connections to postgres
-  #    ports:
-  #      - "5331:5432"
-
-  # Vanilla RabbitMQ service. This is needed by celery
   rabbitmq:
     image: rabbitmq:3.7-alpine
     container_name: rabbitmq4${COMPOSE_PROJECT_NAME}
@@ -132,9 +124,6 @@ services:
       - rabbitmq:/var/lib/rabbitmq
     restart: on-failure
 
-networks:
-  shared:
-    driver: bridge
 
 volumes:
   becamaps-app:
