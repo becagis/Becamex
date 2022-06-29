@@ -1,0 +1,161 @@
+version: '3.5'
+
+# Common Django template for GeoNode and Celery services below
+x-common-django:
+  &default-common-django
+  image: becagis/geoportal_geonode:3.3.2
+  restart: on-failure
+  env_file:
+    - .env
+  volumes:
+    - '.:/usr/src/geonode'
+    - statics:/mnt/volumes/statics
+    - geoserver-data-dir:/geoserver_data/data
+    - backup-restore:/backup_restore
+    - data:/data
+    - tmp:/tmp
+  networks:
+    - shared
+
+services:
+
+  #### BecaGIS Maps ##############################################
+  laravel:
+    image: becagis/becamaps_app:1.0.0
+    volumes:
+      - becamaps-app:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+
+  nginx:
+    image: becagis/becadock_nginx
+    environment:
+      - PHP_UPSTREAM_CONTAINER=laravel
+    volumes:
+      - becamaps-app:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+    ports:
+      - "86:80"
+    depends_on:
+      - laravel
+
+  #### BecaGIS GeoPortal ##############################################
+  django:
+    << : *default-common-django
+    container_name: django4${COMPOSE_PROJECT_NAME}
+    healthcheck:
+      test: "curl --fail --silent --write-out 'HTTP CODE : %{http_code}\n' --output /dev/null http://127.0.0.1:8001/"
+      interval: 60s
+      timeout: 10s
+      retries: 1
+      start_period: 60s
+    environment:
+      - IS_CELERY=False
+    entrypoint: ["/usr/src/geonode/entrypoint.sh"]
+    command: "uwsgi --ini /usr/src/geonode/uwsgi.ini"
+
+  celery:
+    << : *default-common-django
+    container_name: celery4${COMPOSE_PROJECT_NAME}
+    depends_on:
+      - django
+    environment:
+      - IS_CELERY=True
+    entrypoint: ["/usr/src/geonode/entrypoint.sh"]
+    command: "celery-cmd"
+
+  geonode:
+    image: becagis/geoportal_nginx:3.3.2
+    container_name: nginx4${COMPOSE_PROJECT_NAME}
+    environment:
+      - HTTPS_HOST=${HTTPS_HOST}
+      - HTTP_HOST=${HTTP_HOST}
+      - HTTPS_PORT=${HTTPS_PORT}
+      - HTTP_PORT=${HTTP_PORT}
+      - LETSENCRYPT_MODE=${LETSENCRYPT_MODE}
+      - RESOLVER=${RESOLVER}
+    ports:
+      - "${HTTP_PORT}:${HTTP_PORT}"
+      - "${HTTPS_PORT}:443"
+    volumes:
+      - nginx-confd:/etc/nginx
+      - nginx-certificates:/geonode-certificates
+      - statics:/mnt/volumes/statics
+    restart: on-failure
+    networks:
+      - shared
+
+  geoserver:
+    image: geonode/geoserver:2.19.6
+    container_name: geoserver4${COMPOSE_PROJECT_NAME}
+    healthcheck:
+      test: "curl --fail --silent --write-out 'HTTP CODE : %{http_code}\n' --output /dev/null http://127.0.0.1:8080/geoserver/rest/workspaces/geonode.html"
+      interval: 60s
+      timeout: 10s
+      retries: 1
+      start_period: 60s
+    env_file:
+      - .env
+    volumes:
+      - statics:/mnt/volumes/statics
+      - geoserver-data-dir:/geoserver_data/data
+      - backup-restore:/backup_restore
+      - data:/data
+      - tmp:/tmp
+    restart: on-failure
+
+  data-dir-conf:
+    image: geonode/geoserver_data:2.19.6
+    container_name: gsconf4${COMPOSE_PROJECT_NAME}
+    command: /bin/true
+    volumes:
+      - geoserver-data-dir:/geoserver_data/data
+    restart: on-failure
+
+  #  # PostGIS database.
+  #  db:
+  #    # use geonode official postgis 13 image
+  #    image: geonode/postgis:13
+  #    container_name: db4${COMPOSE_PROJECT_NAME}
+  #    env_file:
+  #      - .env
+  #    volumes:
+  #      - dbdata:/var/lib/postgresql/data
+  #      - dbbackups:/pg_backups
+  #    restart: on-failure
+  #    # uncomment to enable remote connections to postgres
+  #    ports:
+  #      - "5331:5432"
+
+  # Vanilla RabbitMQ service. This is needed by celery
+  rabbitmq:
+    image: rabbitmq:3.7-alpine
+    container_name: rabbitmq4${COMPOSE_PROJECT_NAME}
+    volumes:
+      - rabbitmq:/var/lib/rabbitmq
+    restart: on-failure
+
+networks:
+  shared:
+    driver: bridge
+
+volumes:
+  becamaps-app:
+    name: ${COMPOSE_PROJECT_NAME}-becamaps-app
+  statics:
+    name: ${COMPOSE_PROJECT_NAME}-statics
+  nginx-confd:
+    name: ${COMPOSE_PROJECT_NAME}-nginxconfd
+  nginx-certificates:
+    name: ${COMPOSE_PROJECT_NAME}-nginxcerts
+  geoserver-data-dir:
+    name: ${COMPOSE_PROJECT_NAME}-gsdatadir
+  dbdata:
+    name: ${COMPOSE_PROJECT_NAME}-dbdata
+  dbbackups:
+    name: ${COMPOSE_PROJECT_NAME}-dbbackups
+  backup-restore:
+    name: ${COMPOSE_PROJECT_NAME}-backup-restore
+  data:
+    name: ${COMPOSE_PROJECT_NAME}-data
+  tmp:
+    name: ${COMPOSE_PROJECT_NAME}-tmp
+  rabbitmq:
+    name: ${COMPOSE_PROJECT_NAME}-rabbitmq
