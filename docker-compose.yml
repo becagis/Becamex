@@ -36,18 +36,16 @@ services:
 
   #### BecaGIS Maps ##############################################
   laravel:
-    image: becagis/becamaps_app:1.0.0
+    image: becamexidc2020/becamaps_app:1.0.0
     volumes:
-      - becamaps-app:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
+      - becamaps-app:/var/www
 
   nginx:
-    image: becagis/becadock_nginx
+    image: becamexidc2020/becamaps_nginx
     environment:
       - PHP_UPSTREAM_CONTAINER=laravel
     volumes:
-      - becamaps-app:${APP_CODE_PATH_CONTAINER}${APP_CODE_CONTAINER_FLAG}
-    ports:
-      - "86:80"
+      - becamaps-app:/var/www
     depends_on:
       - laravel
 
